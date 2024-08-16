@@ -1,0 +1,58 @@
+---
+title: "36462--HW1"
+author: "David Lurie"
+date: "2024-01-22"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+header-includes: \usepackage{bbm}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**1.**
+
+*a)*
+
+$f^{*}=\underset{f}{argmin} R(f)=\underset{f}{argmin} \mathbb{E}[L_{01} \mathbbm{1}(Y=1)\mathbbm{1}(f(x)=0)+L_{10} \mathbbm{1}(Y=0)\mathbbm{1}(f(x)=1)]$
+
+$=\underset{f}{argmin} \mathbb{E}[\mathbb{E}[L_{01} \mathbbm{1}(Y=1)\mathbbm{1}(f(x)=0)+L_{10} \mathbbm{1}(Y=0)\mathbbm{1}(f(x)=1])|X]$
+
+$=\underset{f}{argmin} \mathbb{E}[L_{01}P(Y=1)\mathbbm{1}(f(x)=0)+L_{10}P(Y=0)\mathbbm{1}(f(x)=1)]$
+
+To minimize the expected value, we choose either f(x)=0 or f(x)=1 to pick the least of the two terms, which depends on whether the associated probabilities, multiplied by a constant (loss), is greater. 
+
+$f^{*}(x) =
+    \begin{cases}
+      1 & if L_{01}*P(Y=1)\geq L_{10}*P(Y=0)\\
+      0 & if \text{otherwise}
+    \end{cases}$
+
+
+*b)*
+
+If $L_{10}>L_{01}$, we now weigh the loss from incorrectly predicting Y=0 when Y=1 is true more than predicting Y=1 when Y=0 is true. So, the threshold boundary for classifying moves *lower* (compared to equal loss for both misclassification cases, where the threshold is .5) to account for unequal weighting, meaning we now only predict Y=0 for lower values of P(Y=0).
+
+**2.**
+
+*a)*
+
+```{r}
+library(ISLR)
+Default$defaultFactor=ifelse(Default$default=="Yes",1,0)
+lm=lm(defaultFactor~balance, data=Default)
+pred=predict(lm,Default)
+plot(Default$defaultFactor~Default$balance,
+     main="Regression of Default~Balance",
+     xlab="Balance ($)",ylab="Default")
+lines(Default$balance,pred)
+```
+We can see that the regression line falls below 0 for lower values of balance. This makes it a flawed model for predicting probabilities, which are contained within [0,1].
+
+
+*b)*
+
+Given the encodings from 1 to 3, if we had a test point whose 10 nearest neighbors consisted of 5 coded as 1 and 5 as 3, we would estimate the test point to have a value of 2, as this is the mean of its 10 nearest neighbors. Therefore, we would classify it as a drug overdose, since we encoded drug overdose to a 2. This label does not make sense, because the data is categorical and has no ordinal ranking, so assigning numbers to the three groups is illogical. This is proven concretely here, since, using 10 nearest neighbors, intuitively a point near ten points of two other classes should not be predicted to be of a third class. There is no rationale to predicting a point that is near to observations of stroke and epileptic seizure as a drug overdose solely due to the numbers arbitrarily assigned to those three categories.

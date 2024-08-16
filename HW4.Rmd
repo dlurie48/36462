@@ -1,0 +1,145 @@
+---
+title: "HW4"
+author: "David Lurie"
+date: "2024-02-10"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+
+**2.**
+
+*a)*
+
+No, the data is not linearly separable since 4 and -2 are in class 1 while -1 is in class 1 and -2<1<4.
+
+*b)*
+
+```{r}
+library(ggplot2)
+a=as.data.frame(matrix(data=(c(-3,-2,-1,1,4,9,4,1,1,16,1,1,-1,-1,1)),nrow=5,ncol=3))
+colnames(a)=c("X","X_prime","class")
+a$class=as.factor(a$class)
+ggplot(a) + geom_point(mapping=aes(x=X,y=X_prime,color=class))
+```
+
+*c)*
+
+Yes, the data is linearly separable by
+
+$f^*(x) =
+    \begin{cases}
+      1 & if X^\prime>2\\
+      -1 & if \text{otherwise}
+    \end{cases}$
+    
+
+**4.**
+
+```{r}
+set.seed(1)
+get_circle_data = function(n){
+  X = matrix(rnorm(2*n),ncol=2)
+  Y = as.numeric(X[,1]^2+X[,2]^2<1)
+  data.frame(x1=X[,1],x2=X[,2],y=as.factor(ifelse(Y==1,1,-1)))  
+}
+
+#Note, you need to have y be a factor for the svm package to realize you're doing classification
+library(e1071)
+
+train = get_circle_data(100)
+test = get_circle_data(1000)
+
+#Plot the training and test data.  Color the data points by class.
+plot(train$x1,train$x2,pch=as.numeric(train$y) + 15,col=train$y, main="Training data")
+plot(test$x1,test$x2, pch=as.numeric(test$y) + 15, col=test$y,  main="Testing data")
+library(e1071)
+```
+
+*a)*
+
+```{r}
+svm.out.lin=suppressWarnings(svm(y~.,data=train, kernel="linear", cost=10000000))
+plot(svm.out.lin,train)
+```
+
+```{r}
+svm.lin.pred=predict(svm.out.lin,test)
+sum(svm.lin.pred!=test$y)/nrow(test)
+```
+
+The linear kernel does a poor job of classifying the circle since it misclassifies points more than 50% of the time, so it would be better off flipping a coin.
+
+*b)*
+
+```{r}
+svm.out.pol=suppressWarnings(svm(y~.,data=train, kernel="polynomial", cost=10000000))
+plot(svm.out.pol,train)
+```
+
+```{r}
+svm.pol.pred=predict(svm.out.pol,test)
+sum(svm.pol.pred!=test$y)/nrow(test)
+```
+
+The polynomial kernel is better at classification than the linear kernel, but not much better than flipping a coin to classify each point.
+
+*c)*
+
+```{r}
+svm.out.quad=suppressWarnings(svm(y~.,data=train, kernel="polynomial",
+                                  degree=2, cost=1000))
+plot(svm.out.quad,train)
+```
+
+```{r}
+svm.quad.pred=predict(svm.out.quad,test)
+sum(svm.quad.pred!=test$y)/nrow(test)
+```
+
+The quadratic kernel classification boundary seems to more closely align with the true shape of the different class distributions. It correctly classifies most of the points. 
+
+*d)*
+
+```{r}
+svm.tune=tune(svm,y~.,data=train, kernel="polynomial", degree=2,
+              ranges=list(cost=c(1000, 1e4, 1e5, 1e6, 1e7, 1e8),
+              gamma=c(0.001, 0.005, 0.01, 0.05, .1, 1)))
+svm.tune$best.parameters
+sum(svm.tune$best.model$fitted!=train$y)/nrow(train)
+plot(svm.tune$best.model,train)
+```
+
+The best parameters are a cost of 10^7 and gamma of .001. This model's misclassification error is .04, which is quite small compared to other models' attempts.
+
+*e)*
+
+```{r}
+svm.out.rbf=suppressWarnings(svm(y~.,data=train, kernel="radial", 
+                                 cost=1000))
+plot(svm.out.rbf,train)
+svm.rbf.pred=predict(svm.out.rbf,test)
+sum(svm.rbf.pred!=test$y)/nrow(test)
+```
+
+The radial kernel is quite good at classifying the points. Its decision boundary shape is similar to the quadratic kernel, and its mislcassification rate is slightly smaller.
+
+*f)*
+
+```{r}
+svm.tune.rbc=tune(svm,y~.,data=train, kernel="radial",
+                  ranges=list(cost=c(.1,1,10,100,1000,
+1e4, 1e5, 1e6),
+                  gamma=c(0.01, 0.05, .1, .5,1,2,3)))
+svm.tune.rbc$best.parameters
+svm.rbf.best=predict(svm.tune.rbc$best.model,test)
+sum(svm.rbf.best!=test$y)/nrow(test)
+```
+
+```{r}
+plot(svm.tune.rbc$best.model,train)
+```
+
+The parameters of the best model using a rbf kernel is a cost of 10 and a gamma of .5. The associated misclassification rate of 0.027 is also very good.

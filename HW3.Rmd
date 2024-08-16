@@ -1,0 +1,188 @@
+---
+title: "HW3"
+author: "David Lurie"
+date: "2024-02-04"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**2.**
+
+```{r}
+library(ISLR)
+data(Hitters, package="ISLR")
+Hitters=na.omit(Hitters)
+set.seed(1)
+# Draw 75 samples to be used as a training set
+train.idx = sample(1:nrow(Hitters), 75,
+replace=FALSE)
+# Form the training set (all the rows we sampled).
+#Also drop NewLeague variable
+train = Hitters[train.idx,-20]
+# Form the testing set (all the rows we did not sample).
+# Also drop NewLeague variable
+test = Hitters[-train.idx,-20]
+testx=test[,-19]
+```
+
+```{r}
+n=75
+start=20
+mses=matrix(data=rep(NA,(n-start+1)*4),ncol=1)
+```
+
+*a)*
+
+```{r}
+for (i in start:n){
+  train.lm=train[1:i,]
+  fit.lm=lm(Salary~.,train.lm)
+  
+  fit.pred.lm.test=predict(fit.lm,testx)
+  mse.lm.test=mean((test$Salary-fit.pred.lm.test)^2)
+  mses[i-start+1]=mse.lm.test
+  
+  fit.pred.lm.train=predict(fit.lm,train.lm)
+  mse.lm.train=mean((train.lm$Salary-fit.pred.lm.train)^2)
+  mses[37+i]=mean((fit.lm$residuals)^2)
+}
+cat("Linear Model test error average: ",mean(mses[1:56]),"\n",
+    "Linear Model train error average: ",mean(mses[57:112]))
+```
+
+*b)*
+
+```{r}
+library(glmnet)
+for (i in start:n){
+  train.ridge=train[1:i,]
+  fit.ridge=glmnet(x=train.ridge[,-ncol(train.ridge)],y=train.ridge$Salary, 
+                   alpha=0, family="gaussian", lambda=20)
+
+  newx.test=model.matrix(~.-Salary,data=test)[,-1]
+  fit.pred.ridge.test=predict(fit.ridge, newx=newx.test)
+  mse.ridge.test=mean((test$Salary-fit.pred.ridge.test)^2)
+  mses[93+i]=mse.ridge.test
+  
+  newx.train=model.matrix(~.-Salary,data=train.ridge)[,-1]
+  fit.pred.ridge.train=predict(fit.ridge, newx=newx.train)
+  mse.ridge.train=mean((train.ridge$Salary-fit.pred.ridge.train)^2)
+  mses[149+i]=mse.ridge.train
+}
+cat("Ridge test error average: ",mean(mses[113:168]),"\n",
+    "Ridge train error average: ",mean(mses[169:224]))
+```
+
+```{r}
+mses=as.data.frame(mses)
+mses$MSE=c(rep("LMTest",56),rep("LMTrain",56),rep("RidgeTest",56),rep("RidgeTrain",56))
+mses$n=rep(c(20:75),4)
+colnames(mses)=c("Value","MSE","N")
+library(ggplot2)
+ggplot(mses,aes(x=N)) + geom_line(aes(y=Value, color=MSE)) + labs(main="Plot of MSEs over N",y="MSE")
+ggplot(mses,aes(x=N)) + geom_line(aes(y=Value, color=MSE)) + 
+  labs(main="Log Plot of MSEs over N",y="log MSE") + scale_y_log10()
+```
+
+The normal plot shows that the test error for the linear model starts multiple magnitudes higher than the other errors, then quickly decreases to converge to the test error for the Ridge model. The train error for the linear and Ridge model both start lower than the other two models and converge towards each other, with the Ridge train error remaining slightly greater than the linear model error and the linear model error increasing from a lower n. From the log scaled plot we can see that the two test and two train errors become nearer to each other respective model's error, but do not intersect.
+
+**3.**
+
+*a)*
+
+```{r}
+ridge=glmnet(x=train[,-ncol(train)],y=train$Salary, alpha=0, family="gaussian")
+lasso=glmnet(x=train[,-ncol(train)],y=train$Salary, alpha=1, family="gaussian")
+plot(ridge,xvar="lambda",main="Ridge")
+plot(lasso,xvar="lambda",main="LASSO")
+```
+
+The coefficients go to zero much faster for LASSO and also decrease to 0 faster than for Ridge, where coefficients stay nonzero for higher values of lambda and also don't decrease as fast.
+
+*b)*
+
+```{r}
+newx.test=model.matrix(~.-Salary,data=test)[,-1]
+
+pred.lasso=predict.glmnet(lasso,newx=newx.test)
+mses.lasso=colMeans((pred.lasso-test$Salary)^2)
+plot(log(lasso$lambda),mses.lasso,xlab="Log Lambda",ylab="MSE", main="LASSO")
+
+pred.ridge=predict.glmnet(ridge,newx=newx.test)
+mses.ridge=colMeans((pred.ridge-test$Salary)^2)
+plot(log(ridge$lambda),mses.ridge,xlab="Log Lambda",ylab="MSE",main="Ridge")
+```
+
+Yes, for both methods the mse drops initially as log(lamdba) increases and we regularize the coefficients but then increases past a minimum as we over-regularize.
+
+**4)**
+
+```{r}
+load("C:/Users/david/Downloads/zip.014.Rdata")
+plot.digit = function(x,zlim=c(-1,1))
+{
+cols = gray.colors(100)[100:1]
+image(matrix(x,nrow=16)[,16:1],col=cols, zlim=zlim,axes=FALSE)
+}
+```
+
+
+*a)*
+
+```{r}
+library(MASS)
+lda.data.test=cbind(x.014.te,as.data.frame(y.014.te))
+lda.data.train=cbind(x.014.tr,as.data.frame(y.014.tr))
+lda.out=lda(y.014.tr~.,data=lda.data.train)
+train.transformed=x.014.tr %*% lda.out$scaling
+plot(lda.out$scaling[,1],lda.out$scaling[,2],col=y.014.tr+1,xlab="X1",
+     ylab="X2",main="Transformed Data")
+legend("bottomleft",legend=c("0","1","4"),
+       pch=1,col=c("black","red","cyan"))
+ncol(x.014.te)
+```
+
+The original feature space has 256 dimensions.
+
+*b)*
+
+```{r}
+lda.pred=predict(lda.out,newdata = lda.data.test)
+1-sum(lda.pred$class==y.014.te)/length(y.014.te)
+```
+
+The misclassification rate is 2.06%.
+
+*c)*
+
+```{r}
+test.transformed=x.014.te %*% lda.out$scaling
+
+lda.df=as.data.frame(test.transformed)
+lda.df$yn=ifelse(lda.pred$class==y.014.te,"Correct","Incorrect")
+
+train.transformed=as.data.frame(train.transformed)
+train.transformed$yn=rep("Train",nrow(train.transformed))
+
+lda.df=rbind(lda.df,train.transformed)
+
+lda.df$Class_Train=as.factor(lda.df$yn)
+
+lda.df$Number=as.factor(c(y.014.te,y.014.tr))
+
+ggplot(lda.df,mapping=aes(x=LD1,y=LD2)) + geom_point(mapping=aes(color=Class_Train,shape=Number))
+```
+
+*d)*
+
+```{r}
+msclsfd=which(lda.pred$class!=y.014.te)
+for (i in 1:3){
+  plot.digit(x.014.te[msclsfd[i],])
+}
+```
+
+Although these three digits are fairly easily classifiable by eye, it is clear that they are not quite as normal or standard as one might expect for most handwritten digits.

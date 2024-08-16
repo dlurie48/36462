@@ -1,0 +1,331 @@
+---
+title: "HW5"
+author: "David Lurie"
+date: "2024-02-23"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+**1.**
+
+```{r}
+x=matrix(c(11,10,4,12,2,10,8,6,7,7, 3,1,4,10,4,5,8,5,7,8),ncol=2)
+y=matrix(c(-1,-1,-1,1,-1,1,-1,1,1,1),ncol=1)
+```
+
+*a)*
+
+```{r}
+n=nrow(x)
+weights=rep(1/n,n)
+find_weak_learner=function(x,y,wgts,learners){
+  best_error=10
+  best_cutoff=NULL
+  best_cutoff_x=0
+  for (i in 1:10){
+    for (j in 1:2){
+      cutoff=x[i,j]
+      preds=ifelse(x[,j]>cutoff,1,-1)
+      error=sum((preds!=y)*wgts)/sum(wgts)
+      if (error<best_error){
+        if (sum(c(i,j) %in% learners)==2){
+          next
+        }
+        best_error=error
+        best_cutoff=cutoff
+        best_cutoff_x=j
+        best_preds=preds
+      }
+    }
+  }
+  list(best_preds,best_error,best_cutoff,best_cutoff_x)
+}
+initial_weak_learner=find_weak_learner(x,y,weights,c())
+cat("Weights:", weights)
+cat("\nX", initial_weak_learner[[4]], ">", initial_weak_learner[[3]])
+```
+The best weak learner is X_2>4.
+
+$f^1(x) =
+    \begin{cases}
+      1 & if X_{2}>4\\
+      -1 & if \text{otherwise}
+    \end{cases}$
+
+
+*b)*
+
+```{r}
+initial_error=initial_weak_learner[[2]]
+alpha=log((1-initial_error)/initial_error)
+initial_error
+alpha
+```
+
+The weighted training error of the first weak learner is .1; we assign this classifier a weight of 2.197.
+
+*c)*
+
+```{r}
+new_weights=weights*exp(alpha*(initial_weak_learner[[1]]!=y))
+cat("Weights:", new_weights)
+second_weak_learner=find_weak_learner(x,y,new_weights,c(2,4))
+cat("\nX", second_weak_learner[[4]], ">", second_weak_learner[[3]])
+```
+The best second weak learner is X_1>11.
+
+$f^2(x) =
+    \begin{cases}
+      1 & if X_{1}>11\\
+      -1 & if \text{otherwise}
+    \end{cases}$
+
+
+*d)*
+
+```{r}
+second_error=sum(second_weak_learner[[2]]*new_weights)/sum(new_weights)
+alpha_new=log((1-second_error)/second_error)
+second_error
+alpha_new
+```
+The weighted training error of the second weak learner is $.\overline2$. The alpha value we assign this classifier is 1.253.
+
+*e)*
+
+```{r}
+f_hat_1=alpha*initial_weak_learner[[1]]
+f_hat_2=alpha_new*initial_weak_learner[[2]]
+sign(f_hat_1*f_hat_2)
+```
+$f^*(x) = sign(2.197f^{1}(x) + 1.253f^{2}(x))$
+
+**2.**
+
+```{r}
+source("C:/Users/david/Downloads/adaboost_helpers.R")
+set.seed(123456)
+```
+
+```{r}
+get_circle_data = function(n){
+  X = matrix(rnorm(2*n),ncol=2)
+  Y = as.numeric(X[,1]^2+X[,2]^2<1)
+  list(x1=X[,1],x2=X[,2],y=Y)  
+}
+
+get_swirl_data = function(n){
+  n1 = floor(n/2)
+  n2 = n - n1
+  
+  X = matrix(0,nrow=n,ncol=2)
+  Y = matrix(0,nrow=n,ncol=1)
+  
+  r = seq(0, 1, length.out = n1)
+  t = seq(0, 4, length.out = n1) + rnorm(n1)*0.2
+  
+  X[1:n1,1] = r*sin(t)
+  X[1:n1,2] = r*cos(t)
+  Y[1:n1] = 0
+  
+  r = seq(0, 1, length.out = n2)
+  t = seq(4, 8, length.out = n2) + rnorm(n2)*0.2
+  
+  X[(n1+1):n,1] = r*sin(t)
+  X[(n1+1):n,2] = r*cos(t)
+  Y[(n1+1):n] = 1
+  list(x1=X[,1],x2=X[,2],y=as.numeric(Y))
+}
+```
+
+
+*a)*
+
+```{r}
+library(rpart)
+my_adaboost = function(pts, B=10){
+  n = length(pts$y)
+  wgts = rep(1/n,n)
+  trees = vector('list',length=B)
+  alphas = numeric(B)
+  
+  for(b in 1:B){
+    split = find_split(pts,wgts)
+    
+    tree_pred=predict(split$tree, type="class")
+    y=pts$y
+    errors=ifelse(tree_pred==y,0,1)
+    weighted_error=sum(wgts*errors)/sum(wgts)
+
+    alpha=log((1-weighted_error)/weighted_error)
+    
+    new_weights=wgts*exp(alpha*errors)
+    
+    trees[[b]] = split$tree
+    alphas[b] = alpha
+    wgts = new_weights
+  }
+  list(trees=trees, alphas=alphas)
+}
+```
+
+```{r}
+predict_ada = function(btrees, pts){
+  n = length(pts$y)
+  answers = pts$y
+  score = numeric(n)
+  B = length(btrees$alphas)
+  test_err = numeric(B)
+  for(b in 1:B){
+    b_pred=predict(btrees$trees[[b]],newdata=pts,type="class")
+    b_pred=as.numeric(ifelse(b_pred==1,1,-1))
+    alphas=btrees$alphas[b]
+    score = score + alphas*b_pred
+    test_err[b] = sum(as.numeric(score>0)!=as.numeric(answers>0))/n
+  }
+  list(score=score, predictions = as.numeric(score>0), test_err = test_err)
+}
+```
+
+*b)*
+
+```{r}
+circle_test=get_circle_data(500)
+circle_train=get_circle_data(500)
+
+swirl_test=get_swirl_data(500)
+swirl_train=get_swirl_data(500)
+
+plot(circle_train$x1,circle_train$x2,col=(circle_train$y)+1,xlab="X1",ylab="X2",main="Circle Data")
+plot(swirl_train$x1,swirl_train$x2,col=(swirl_train$y)+1,xlab="X1",ylab="X2",main="Swirl Data")
+```
+
+```{r}
+for (b in 1:3){
+  tree=my_adaboost(circle_train,b)
+  tree_pred=predict_ada(tree,circle_test)
+  draw_boosted_trees(tree,circle_test,tree_pred$score)
+}
+
+for (b in 1:3){
+  tree=my_adaboost(swirl_train,b)
+  tree_pred=predict_ada(tree,swirl_test)
+  draw_boosted_trees(tree,swirl_test,tree_pred$score)
+}
+```
+
+*c)*
+
+```{r}
+library(ggplot2)
+
+tree_250_c=my_adaboost(circle_train,250)
+circle_pred_test=predict_ada(tree_250_c,circle_test)
+circle_pred_test_error=circle_pred_test$test_err
+circle_pred_train=predict_ada(tree_250_c,circle_train)
+circle_pred_train_error=circle_pred_train$test_err
+
+circle_df=data.frame(c(circle_pred_train_error,circle_pred_test_error))
+circle_df$N=rep(c(1:250),2)
+circle_df$Data=c(rep("Train",250),rep("Test",250))
+colnames(circle_df)=c("Error","N_trees","Data")
+
+ggplot(circle_df,aes(x=N_trees)) + geom_line(aes(y=Error, color=Data)) + labs(main="Plot of test errors over num trees",y="Error")
+
+draw_boosted_trees(tree_250_c,circle_test,circle_pred_test$score)
+```
+
+
+```{r}
+tree_250_s=my_adaboost(swirl_train,250)
+swirl_pred_test=predict_ada(tree_250_s,swirl_test)
+swirl_pred_test_error=swirl_pred_test$test_err
+swirl_pred_train=predict_ada(tree_250_s,swirl_train)
+swirl_pred_train_error=swirl_pred_train$test_err
+
+swirl_df=data.frame(c(swirl_pred_train_error,swirl_pred_test_error))
+swirl_df$N=rep(c(1:250),2)
+swirl_df$Data=c(rep("Train",250),rep("Test",250))
+colnames(swirl_df)=c("Error","N_trees","Data")
+
+ggplot(swirl_df,aes(x=N_trees)) + geom_line(aes(y=Error, color=Data)) + labs(main="Plot of test errors over num trees",y="Error")
+
+draw_boosted_trees(tree_250_s,swirl_test,swirl_pred_test$score)
+```
+
+**3.**
+
+```{r}
+marketing=read.csv("C:/Users/david/Downloads/marketing (1).csv")
+set.seed(6)
+idx.test = sample(1:nrow(marketing),floor(0.2*nrow(marketing)))
+test = marketing[idx.test,]
+train = marketing[-idx.test,]
+```
+
+*a)*
+
+```{r}
+library(rpart)
+library(rpart.plot)
+rf.out=rpart(y~.,train,method="class")
+rpart.plot(rf.out)
+```
+
+The outputted "tree" is simply predicting "no" every time with no classification rule. This is due to the heavy class imbalance of the dataset used to fit the forest.
+
+*b)*
+
+```{r}
+library(dplyr)
+wgts=ifelse(train$y=="yes",10,1)
+rf.weighted=rpart(y~.,train,weights=wgts,method="class")
+rpart.plot(rf.weighted)
+rf.wgts.pred=predict(rf.weighted,test,type="class")
+rf.wgts.prob=predict(rf.weighted,test,type="prob")[,2]
+rf.mis=sum(rf.wgts.pred!=test$y)/length(test$y)
+
+logit.out=glm(as.factor(y)~.,train,family="binomial")
+log.pred=predict(logit.out,test,type="response")
+log.pred=ifelse(log.pred>=.5,1,0)
+log.mis=sum(log.pred!=(ifelse(test$y=="yes",1,0)))/length(test$y)
+
+cat("RF misclassification rate:",rf.mis)
+cat("\nlogistic regression misclassification rate:",log.mis)
+
+test.top=suppressMessages(top_n(as.data.frame(rf.wgts.prob),1000)[,1])
+test.top.inds=which(rf.wgts.prob %in% test.top)
+top.rate=sum(test[test.top.inds,which(colnames(test)=="y")]=="yes")/length(test.top)
+cat("\nsuccess rate among top 1000 predicted:",top.rate)
+```
+
+The misclassification from the random forest using weights is higher than the base rate or for logistic regression.
+
+*c)*
+
+```{r}
+plotcp(rf.weighted)
+```
+
+```{r}
+tree.pruned=prune(rf.weighted,cp=.039)
+rpart.plot(tree.pruned)
+
+pruned.pred=predict(tree.pruned,test,type="class")
+pruned.mis=sum(pruned.pred!=test$y)/length(test$y)
+
+cat("misclassification rate for pruned tree:", pruned.mis)
+
+pruned.prob=predict(tree.pruned,test,type="prob")
+test.top.pruned=suppressMessages(top_n(as.data.frame(pruned.prob),1000)[,1])
+test.top.inds.pruned=which(pruned.prob %in% test.top.pruned)
+top.rate.pruned=sum(test[test.top.inds.pruned,which(colnames(test)=="y")]=="yes")/length(test.top)
+cat("\nsuccess rate among top 1000 predicted:",top.rate.pruned)
+```
+
+It seems like the error decreases slightly for higher values of cp but based on the plot the greatest decrease happens from very high values to .039. So, we choose .039 as the optimal value since beyond that there is little improvement in the classification error. 
+
+Because of the imbalance of the data, the pruned weighted random forest performs worse on 1/0 loss rather than the baseline predictor and logistic regression. On the top 1000 highest rated individuals the success rate is slightly better than on the un-pruned tree.

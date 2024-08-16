@@ -1,0 +1,189 @@
+---
+title: "HW8"
+author: "David Lurie"
+date: "2024-04-05"
+output: pdf_document
+---
+
+**1.**
+
+```{r}
+load("C:/Users/david/Downloads/hw8spiral.RData")
+spiralData=as.data.frame(cbind(x1,x2,y))
+```
+
+
+*a)*
+
+```{r}
+plot(x=spiralData[,1],y=spiralData[,2],
+     col=grey(0.8*(y - min(y))/(max(y)-min(y))),pch=19)
+```
+
+Points nearer to the middle of the spiral have greater y values than points towards the outer part of the spiral. X1 and X2 would struggle to predict Y in linear regression since the relationship between Y and X1 is dependent on X2, and that between Y and X2 dependent on X1.
+
+*b)*
+
+```{r}
+mlm=lm(y~.,spiralData)
+mlmpred=predict(mlm,spiralData)
+mlmerror=sum((mlmpred-spiralData$y)^2)
+mlmerror
+plot(x=spiralData$y,y=mlmpred)
+```
+
+The MSE from linear regression is quite large given the units for this data are relatively small. The plot of predicted against true y values also is not a good result from linear regression, and actually shows a clear nonlinear pattern that reflects the spiral shape.
+
+*c)*
+
+```{r}
+library(vegan)
+X=cbind(x1,x2)
+eucdist=dist(X)
+plot(as.matrix(eucdist)[25,])
+```
+
+```{r}
+isodist=isomapdist(eucdist,k=1)
+plot(as.matrix(isodist)[25,])
+```
+
+```{r}
+Z=cmdscale(isodist,k=2)
+plot(Z[,1],Z[,2],col=grey(0.8*(y - min(y))/(max(y)-min(y))),pch=19)
+```
+
+Higher values of y have lower values of the first dimension of Z.
+
+*d)*
+
+```{r}
+zdat=as.data.frame(cbind(Z,spiralData$y))
+colnames(zdat)=c("x1","x2","y")
+zlm=lm(y~.,zdat)
+zlmpred=predict(zlm,zdat)
+zlmerror=sum((zlmpred-spiralData$y)^2)
+zlmerror
+plot(x=spiralData$y,y=zlmpred)
+abline(a=0,b=1)
+```
+
+The training error is significantly lower than in a) and the plot of predicted vs true y value is quite reasonable. Clearly this is much better than the earlier attempt at regression.
+
+**2.**
+
+*a)*
+ 
+PCA and kernel PCA use the inner product matrix, mds, isomap, and laplacian eigenmap use the pairwise distances.
+
+*b)* 
+
+Isomap eigenmap is closely related to spectral clustering.
+
+*c)*
+
+PCA uses eigenvectors of covariance matrix. Kernal PCA uses eigenvectors of the kernal matrix. Laplacian eigenmaps use eigenvectors of the graph Laplacian.
+
+*d)*
+
+PCA and MDS are linear dimension reduction methods.
+
+*e)*
+
+In Kernel PCA, the choice of Kernel is a tuning parameter. In isompap, you choose the number of nearest neighbors to form the graph. In Laplacian eigenmap, we also have the choice of how many nearest neighbors to define edges on the graph.
+
+**3.**
+
+```{r}
+# plot the decision boundary
+decisionplot <- function(model, data, class,
+                         resolution = 100, showgrid = TRUE, ...) {
+  
+  cl <- class
+  k <- length(unique(cl))
+  
+  plot(data, col = as.integer(cl)+1L, pch = as.integer(cl)+1L, ...)
+  
+  # make grid
+  r = matrix(nrow=2,ncol=2)
+  r[1,1] = min(data[,1])
+  r[2,1] = max(data[,1])
+  r[1,2] = min(data[,2])
+  r[2,2] = max(data[,2])
+  xs <- seq(r[1,1], r[2,1], length.out = resolution)
+  ys <- seq(r[1,2], r[2,2], length.out = resolution)
+  g <- cbind(rep(xs, each=resolution), rep(ys, time = resolution))
+  colnames(g) <- colnames(r)
+  g <- as.data.frame(g)
+  
+  p <- predict(model, g)
+  p <- p > 0.5
+  p <- as.factor(p)
+  
+  if(showgrid) points(g, col = as.integer(p)+1L, pch = ".")
+  
+  z <- matrix(as.integer(p), nrow = resolution, byrow = TRUE)
+  contour(xs, ys, z, add = TRUE, drawlabels = FALSE,
+          lwd = 2, levels = (1:(k-1))+.5)
+  
+  invisible(z)
+}
+
+# generate data
+get_swirl_data = function(n){
+  n1 = floor(n/2)
+  n2 = n - n1
+  
+  X = matrix(0,nrow=n,ncol=2)
+  Y = matrix(0,nrow=n,ncol=1)
+  
+  r = seq(0, 1, length.out = n1)
+  t = seq(0, 4, length.out = n1) + rnorm(n1)*0.2
+  
+  X[1:n1,1] = r*sin(t)
+  X[1:n1,2] = r*cos(t)
+  Y[1:n1] = 0
+  
+  r = seq(0, 1, length.out = n2)
+  t = seq(4, 8, length.out = n2) + rnorm(n2)*0.2
+  
+  X[(n1+1):n,1] = r*sin(t)
+  X[(n1+1):n,2] = r*cos(t)
+  Y[(n1+1):n] = 1
+  list(x1=X[,1],x2=X[,2],y=as.numeric(Y))
+}
+```
+
+```{r}
+set.seed(100)
+swirlData=get_swirl_data(500)
+plot(swirlData$x1,swirlData$x2,col=as.factor(swirlData$y))
+```
+
+```{r}
+library(neuralnet)
+nn=neuralnet(y~x1+x2,data=swirlData,hidden=3,err.fct="ce",linear.output=F)
+x=as.data.frame(cbind(swirlData$x1,swirlData$x2))
+decisionplot(nn,x,swirlData$y)
+plot(nn)
+# your code can go here
+```
+
+$expit(25(expit(49x_1+213x_2+37))+39(expit(-223x_1-41x_2+0.3))-46(expit(-16x_1-21x_2+9))-1.5)$
+
+*b)*
+
+```{r}
+nnlowvar=neuralnet(y~x1+x2,data=swirlData,hidden=1,err.fct="ce",linear.output=F)
+decisionplot(nnlowvar,x,swirlData$y)
+```
+
+The decision boundary with only one hidden layer is very linear, and as a result points near the center of the spiral would be incorrectly classified.
+
+*c)*
+
+```{r}
+nnhighvar=neuralnet(y~x1+x2,data=swirlData,hidden=15,err.fct="ce",linear.output=F)
+decisionplot(nnhighvar,x,swirlData$y)
+```
+The boundary and resulting classification with 15 layers is not very different from the neural net with 3 hidden layers. With the additional 12 layers, I would expect the variance to increase as there are more parameters in the model, while the bias doesn't seem to change much. In this case, it wouldn't make sense to use the more flexible, higher variance model because the bias does not decrease much, if at all.

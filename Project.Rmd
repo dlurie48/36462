@@ -1,0 +1,275 @@
+---
+title: "Project Report"
+author: "David Lurie"
+date: "2024-04-29"
+output: 
+  pdf_document:
+    extra_dependencies: ["flafter"]
+header-includes:
+- \usepackage{float}
+- \usepackage{flafter}
+- \floatplacement{figure}{H}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+```
+
+```{r, include=F}
+test=read.csv("C:/Users/david/Downloads/test_data_x.csv")
+train=read.csv("C:/Users/david/Downloads/train_data.csv")
+```
+
+```{r, include=F}
+set.seed(9)
+trainInds=sample(nrow(train),size=.8*nrow(train))
+trainData=train[trainInds,]
+testData=train[-trainInds,]
+Xtrain=trainData[,-17]
+Xtest=testData[,-17]
+```
+
+```{r, include=F}
+library(neuralnet)
+library(xgboost)
+library(ggplot2)
+library(tidyr)
+# library(data.table)
+library(rpart)
+# library(rpart.plot)
+library(JOUSBoost)
+library(glmnet)
+library(e1071)
+library(corrplot)
+library(kableExtra)
+```
+
+**Introduction**
+
+With a dataset of 16 features, we try to predict a binary grain type. All features are from computer vision methods applied to the grains. First we explore the data, then build a model that classifies grain type, and finally estimate the prediction error of our model. 
+
+**Data  Exploration**
+
+Our data consist of 4946 data to train a model on, including the 16 aforementioned features and the true grain type, which are coded as 1 or 0. Some of the features relate to simple geometric values, like area, perimeter, and major and minor axis length. There are also variables for the shape of the grain itself, including roundness, compactness, and four factors that describe the shape (ShapeFactor1-4). Finally, some variables are linear combinations of other, like aspect ratio, which is the ratio of the major to minor axis length. 
+
+```{r, echo=F}
+corrplot(cor(Xtrain))
+```
+
+Given the strong correlation between some variables, methods that reduce the negative effects of unnecessary variable inclusion. One approach is dimension reduction, like PCA, however given the project is only focused on prediction and the number of features is relatively small, simply including all variables in models robust to multicollinear or uninfluential variables works well. Still, intuition suggests that models like LASSO, which incorporates feature selection into the model, could be useful. 
+
+Without additional knowledge of the variables and the grains, generating additional features is mostly guesswork, so for future modeling I use just the 16 given features.
+
+**Analysis**
+
+First, I split the given training data into a further training and test split. As I have an unlabeled test set to evaluate predictions on, creating a labelled one allows us to estimate an unbiased error rate from our models trained on the train subset.
+
+```{r, include=F, eval=F}
+set.seed(9)
+trainInds=sample(nrow(train),size=.8*nrow(train))
+trainData=train[trainInds,]
+testData=train[-trainInds,]
+Xtrain=trainData[,-17]
+Xtest=testData[,-17]
+```
+
+```{r, cache=T, include=F}
+cvfit=glmnet::cv.glmnet(as.matrix(Xtrain), trainData$Y)
+coeff=as.matrix(coef(cvfit, s = "lambda.1se")[,1])
+pred=coeff[1,]+as.matrix(Xtest) %*% coeff[2:nrow(coeff),]
+pred=ifelse(pred>.5,1,0)
+lassomse=mean(pred==testData$Y)
+```
+
+With our new training set, I can fit a simple model to generate a baseline performance I will then try to beat.
+
+I start by training untuned models on the training data and evaluate them using cross validation. With 10 folds I maintain low training time for complex models while approaching the asymptotic out-of-sample test error for models I try. My intuition suggests that neural nets, boosted trees, and SVM will perform well due to their general predictive ability on small datasets without additional useless features, however I also include random forest and LASSO for model variety. I start with a small neural net of only two layers.
+
+
+```{r, include=F}
+set.seed(10)
+k=10
+n=nrow(train)
+foldInds=sample(rep(1:k,length.out=n))
+errorMatrix=matrix(rep(NA,40),ncol=4,nrow=10)
+  
+  
+for (fold in 1:k){
+    trainData=train[foldInds!=fold,]
+    testData=train[foldInds==fold,]
+    
+    Xtrain=trainData[,-17]
+    Xtest=testData[,-17]
+    
+    yTrain=ifelse(trainData$Y==1,1,-1)
+    yTest=ifelse(testData$Y==1,1,-1)
+    
+    Ytrain=as.factor(trainData$Y)
+    Ytest=as.factor(testData$Y)
+    
+    nndataTrain=as.data.frame(scale(Xtrain))
+    nndataTrain$Y=trainData$Y
+    
+    rf=rpart(Y~.,trainData,method="class")
+    rfpred=predict(rf,testData)
+    rfpred=ifelse(rfpred[,1]>.5,0,1)
+    errorMatrix[fold,1]=mean(rfpred==testData$Y)
+      
+    ada=adaboost(as.matrix(Xtrain),yTrain)
+    adapred=predict(ada,Xtest)
+    errorMatrix[fold,2]=mean(adapred==yTest)
+    
+    svm=svm(Ytrain~.,Xtrain,kernel="radial")
+    svmPred=predict(svm,Xtest)
+    svmPred=ifelse(svmPred==1,1,0)
+    errorMatrix[fold,3]=mean(svmPred==Ytest)
+    
+    nnLarge=neuralnet(Y~.,nndataTrain,hidden=c(5,4,3),linear.output=F,threshold=.15,stepmax=1e+05)
+    nn.predLarge=predict(nnLarge,as.data.frame(scale(Xtest)))
+    nn.predLarge=ifelse(nn.predLarge>.5,1,0)
+    errorMatrix[fold,4]=mean(nn.predLarge==testData$Y)
+}
+```
+
+```{r, echo=F}
+mse=c(lassomse,colMeans(errorMatrix))
+method=c("LASSO","Random Forest","ADAboost","SVM","Neural Net")
+msedf=cbind("Model"=method,"Test Accuracy"=formatC(signif(mse,digits=4), digits=4,format="fg", flag="#"))
+msedf %>%
+  kbl(caption = "Test Acc. of Models") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+```
+
+I find that SVM performs well in cross-validation, while neural nets also perform comparatively well. Surprisingly, LASSO (the baseline), performs best, which I mostly attribute to randomness in the split. Random forest, and ADAboost show marginally worse cross validation errors. Estimating the error with LASSO was done directly using the cv.glment() function. 
+
+While tuning SVM by adjusting the value of C could have resulted in predictive improvements I focused mostly on neural net architecture for tuning. Given SVM already performed best on the cross validation error, the default parameters seem to have worked well. In addition to the two-layer neural net, I also tried three layers with 6,5, and 4 node-layers. I then tried 5,4, and 3 node-layers, which performed essentially as good as the wider net. This version was kept as it is computationally faster. 
+
+Evaluating the models against the deeper neural net, the relative performance is the same, with minimal difference between SVM and neural net. As cross validation can still result in a biased estimate, I then tried to incorporate better performing models with my intuition by testing an ensemble method. This method generates a prediction by taking the mode of predictions for each observation from LASSO, SVM, and the 5-4-3 neural net. 
+
+I found that this model performed nearly as well as the SVM on the holdout test set, and because it has lower variance and therefore less likely than just using SVM to perform much worse on the test error, used this to predict the true Y values from the test set. I also estimated the test error using this ensemble model on the holdout test set.
+
+```{r, echo=F}
+trueY=read.csv("C:/Users/david/Downloads/test_data_Y.csv")
+load("C:/Users/david/Downloads/stat462project.RData")
+testPreds=test
+testPreds$Pred=y.guesses
+testPreds$Correct=as.factor(ifelse(trueY==y.guesses,"Y","N"))
+plotDF=testPreds[,c(1,5,7,11,13,18)]
+dfLong=gather(plotDF,key="variable",value="value",-Correct)
+ggplot(dfLong, aes(x = Correct, y = value)) +
+  geom_boxplot() +
+  # Create facets based on the 'variable' variable
+  facet_wrap(~ variable, scales = "free") +
+  # Add labels
+  xlab("Correct") +
+  ylab("Values") +
+  ggtitle("Boxplot of Values by Classification")
+```
+
+**Results**
+
+By plotting the distributions of certain variables (chosen from the correlation plot as dissimilar ones) I can see if our ensemble method struggled with certain points. Since I correctly classified most points, the distribution of variables for incorrectly classified is tighter. However, the area and convex area variables seem to be slightly greater, and shape factor slightly lower for incorrectly classified points compared to correctly classified ones. 
+
+Future methods could try to directly account for these issues by adding adjustments to the ensemble method. It would also be worthwhile to spend time tuning the SVM to see if a superior test error rate could be achieved. 
+
+I would also like to experiment with other ensemble methods, trying to come up with a final classifier that better makes up for each others' flaws, as boosted methods do. More research into which methods specifically do well on which points could be used to determine which ensemble of methods might work best. 
+
+Trying to generate new features as simple functions of existing ones could also improve accuracy, either as transformations or combinations of multiple variables, although there is no best approach in this case.  
+
+I also erred by using a LASSO model trained through cross-validation that did not use the same folds as I did for other models. Ensuring that these are the same makes comparison across methods more fair.
+
+**Appendix**
+
+Note: although I used the same seed here to reproduce code, when submitting guesses there were a series of code chunks ran in between that affected the final model. However, the methodologies and final model selection remain the same. 
+
+Code: 
+
+*Test/Train Split*
+
+```{r, eval=F}
+set.seed(9)
+trainInds=sample(nrow(train),size=.8*nrow(train))
+trainData=train[trainInds,]
+testData=train[-trainInds,]
+Xtrain=trainData[,-17]
+Xtest=testData[,-17]
+```
+
+*Cross-Validation*
+
+```{r, eval=F}
+set.seed(10)
+k=10
+n=nrow(train)
+foldInds=sample(rep(1:k,length.out=n))
+errorMatrix=matrix(rep(NA,40),ncol=4,nrow=10)
+  
+  
+for (fold in 1:k){
+    trainData=train[foldInds!=fold,]
+    testData=train[foldInds==fold,]
+    
+    Xtrain=trainData[,-17]
+    Xtest=testData[,-17]
+    
+    yTrain=ifelse(trainData$Y==1,1,-1)
+    yTest=ifelse(testData$Y==1,1,-1)
+    
+    Ytrain=as.factor(trainData$Y)
+    Ytest=as.factor(testData$Y)
+    
+    nndataTrain=as.data.frame(scale(Xtrain))
+    nndataTrain$Y=trainData$Y
+    
+    rf=rpart(Y~.,trainData,method="class")
+    rfpred=predict(rf,testData)
+    rfpred=ifelse(rfpred[,1]>.5,0,1)
+    errorMatrix[fold,1]=mean(rfpred==testData$Y)
+      
+    ada=adaboost(as.matrix(Xtrain),yTrain)
+    adapred=predict(ada,Xtest)
+    errorMatrix[fold,2]=mean(adapred==yTest)
+    
+    svm=svm(Ytrain~.,Xtrain,kernel="radial")
+    svmPred=predict(svm,Xtest)
+    svmPred=ifelse(svmPred==1,1,0)
+    errorMatrix[fold,3]=mean(svmPred==Ytest)
+    
+    nnLarge=neuralnet(Y~.,nndataTrain,hidden=c(5,4,3),linear.output=F,threshold=.15,stepmax=1e+05)
+    nn.predLarge=predict(nnLarge,as.data.frame(scale(Xtest)))
+    nn.predLarge=ifelse(nn.predLarge>.5,1,0)
+    errorMatrix[fold,4]=mean(nn.predLarge==testData$Y)
+}
+```
+
+*Predictions with Ensemble*
+
+```{r, eval=F}
+cvfit=glmnet::cv.glmnet(as.matrix(Xtrain), trainData$Y)
+coeff=as.matrix(coef(cvfit, s = "lambda.1se")[,1])
+```
+
+```{r, eval=F}
+Xtest=testData[,-17]
+nndatatest=scale(Xtest)
+
+nnpred=predict(nnLarge,newdata=nndatatest)
+nnpred=ifelse(nnpred>.5,1,0)
+
+pred=coeff[1,]+as.matrix(Xtest) %*% coeff[2:nrow(coeff),]
+pred=ifelse(pred>.5,1,0)
+
+Ytest=as.factor(testData$Y)
+svmPred=predict(svm,Xtest)
+svmPred=ifelse(svmPred==1,1,0)
+
+preds=as.matrix(cbind(nnpred,pred,as.matrix(svmPred)))
+row_sums=apply(preds,1,sum)
+ytestpred=ifelse(row_sums>=2,1,0)
+
+mean(ytestpred==testData$Y) #test error prediction
+
+#y.guesses use this code with true test data instead of sample test data
+```
+
+

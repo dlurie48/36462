@@ -1,0 +1,192 @@
+---
+title: "36462-HW2"
+author: "David Lurie"
+date: "2024-01-27"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+**1.**
+
+*a)*
+
+From HW 1, we have 
+
+$f^{*}(x) =
+    \begin{cases}
+      1 & if L_{01}P(Y=1)\geq L_{10}P(Y=0)\\
+      0 & if \text{otherwise}
+    \end{cases}$
+    
+or, equivalently,
+
+$f^{*}(x) =
+    \begin{cases}
+      1 & if P(Y=1)\geq \frac{L_{01}{L_{10}}}{L_{01}}\\
+      0 & if \text{otherwise}
+    \end{cases}$
+
+for this loss.
+
+The decision boundary
+
+$P(Y=1)\geq \frac{L_{10}}{L_{10}+L_{01}}$
+
+is equivalent to
+
+$\frac{exp(X^T\beta)}{1+exp(X^T\beta)}\geq \frac{L_{01}}{{L_{10}+L_{01}}}$
+
+$exp(X^T\beta)(L_{01}+L_{10}) \geq L_{01}+L_{01}exp(X^T\beta)$
+
+$L_{01}exp(X^T\beta)+L_{10}exp(X^T\beta)-L_{01}exp(X^T\beta) \geq L_{01}$
+
+$L_{10}exp(X^T\beta) \geq L_{01}$
+
+$exp(X^T\beta) \geq \frac{L_{01}}{L_{10}}$
+
+$X^T\beta \geq ln(\frac{L_{01}}{L_{10}})$
+
+$f^{*}(x) = \begin{cases} 1 & if X^T\beta \geq ln(\frac{L_{01}}{L_{10}})\\ 0 & if \text{otherwise} \end{cases}$
+
+When $L_{10} > L_{01}$ the linear decision boundary decreases to below 0 due to the nature of the ln function.
+
+*b)*
+
+*i*
+
+To estimate the coefficients, we use maximum likelihood estimation.
+
+$\ell (\beta)=\sum_{i=1}^{n}logP(Y=y_i|X=x_i)$
+
+Following substitution of probabilities and simplification, we have the following.
+
+$\hat{\beta}=\underset{argmax}{\beta}\sum_{i=1}^{n} \{y_i \beta^T - log(1+exp(\beta^Tx_i))\}$
+
+From training data, we find the value of Beta to maximize this term. This coefficient estimate determines the model.
+
+*ii*
+
+To predict the probability ${P}(Y=1|X=x)$ we compute $$\frac{exp(X^{T}\hat{\beta})}{1+exp(X^{T}\hat{\beta})}$$
+
+*iii*
+
+The decision boundary is the set of X such that $\hat{\beta} X^t=0$
+
+**2.**
+
+*a)*
+
+```{r}
+set.seed(1)
+xdat=sample(0:1,100,replace=T)
+ydat=xdat
+for (i in 1:100){
+  if (xdat[i]==0){
+    xdat[i]=runif(1,-1,0)
+  }
+  else if (xdat[i]==1){
+    xdat[i]=runif(1,0,1)
+  }
+}
+
+fit=glm(ydat~xdat,family="binomial")
+fit.pred=predict(fit,newdata=list(xdat),type="response")
+plot(xdat,fit.pred,xlab="X",ylab="fitted probs")
+```
+
+It gives a warning that the algorithm did not converge, and that fitted probabilities of 0 or 1 occurred. Due to the way we generated the data, the two classes are linearly separable at 0, with no overlap in classes. This  means that the maximum likelihood estimate for Beta 1 does not exist as there are multiple perfect solutions, which leads to the warning. From the plot we can see that all predicted probabilities are 0 or 1, which is also because of this linearly separable data and what the second warning tells us.
+
+*b)*
+
+```{r}
+library(MASS)
+set.seed(100)
+n = 100
+c1_prob = 0.8
+X = matrix(0,nrow=n,ncol=2)
+y = matrix(0,nrow=n,ncol=1)
+for (i in 1:n){
+  if(runif(1) < c1_prob){
+    X[i,] = mvrnorm(1,mu=c(2,2),Sigma=matrix(c(1,0,0,1),2,2))
+    y[i] = 1;
+  } else {
+    X[i,] = mvrnorm(1,mu=c(-2,-2),Sigma=matrix(c(1,0,0,1),2,2))
+    y[i] = 0;
+  }
+}
+```
+
+```{r}
+plot(X[,1],X[,2],col=as.factor(y))
+```
+
+```{r}
+library(glmnet)
+glm.fit = glmnet(X,y,family="binomial",nlambda=1,lambda=0.001)
+plot(X[,1],X[,2],col=as.factor(y))
+int=-glm.fit$a0/glm.fit$beta[2]
+slope=-glm.fit$beta[1]/glm.fit$beta[2]
+abline(int,slope)
+```
+
+*c)*
+
+```{r}
+library(ISLR)
+X.default=cbind(Default$balance,Default$income)
+glm.fit.default = glmnet(X.default,Default$default,family="binomial",nlambda=1,lambda=0.001)
+plot(X.default[,1],X.default[,2],col=as.factor(Default$default),xlab="balance",ylab="income")
+int.d=-glm.fit.default$a0/glm.fit.default$beta[2]
+slope.d=-glm.fit.default$beta[1]/glm.fit.default$beta[2]
+abline(int.d,slope.d)
+```
+
+**3**
+
+*a)*
+
+```{r}
+marketing=read.csv("C:/Users/david/Downloads/marketing.csv")
+set.seed(1)
+idx.test = sample(1:nrow(marketing),floor(0.3*nrow(marketing)))
+test = marketing[idx.test,]
+train = marketing[-idx.test,]
+```
+
+```{r}
+sum(train$y=="no")/nrow(train)
+sum(test$y=="no")/nrow(test)
+```
+On the training data this naive classifier is accurate 88.46% of the time, and 87.92% of the time on the test data.
+
+
+*b)*
+
+```{r}
+train$y=as.factor(ifelse(train$y=="yes",1,0))
+marketing.fit=glm(y~.,train,family="binomial")
+marketing.pred.train=predict(marketing.fit,train,type="response")
+marketing.pred.train.yn=ifelse(marketing.pred.train>=.5,1,0)
+sum(marketing.pred.train.yn==train$y)/nrow(train)
+
+test$y=as.factor(ifelse(test$y=="yes",1,0))
+marketing.pred.test=predict(marketing.fit,test,type="response")
+marketing.pred.test.yn=ifelse(marketing.pred.test>=.5,1,0)
+sum(marketing.pred.test.yn==test$y)/nrow(test)
+```
+
+The two classifiers have equivalent accuracy for train and test data.
+
+*c)*
+
+```{r}
+library(dplyr)
+test.top=suppressMessages(top_n(as.data.frame(marketing.pred.test),1000)[,1])
+test.top.inds=which(marketing.pred.test %in% test.top)
+sum(test[test.top.inds,which(colnames(test)=="y")]==1)/length(test.top)
+sum(marketing$y=="yes")/nrow(marketing)
+```
+
+For the set of 1000 clients who have the highest predicted probability of yes (sale), 31.9%, or 319, actually result in a sale. Compared to the overall probability of 11.69% of customers resulting in a sale, this subset is more likely to do so.
